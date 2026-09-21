@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据总览 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="dashboard">
+
+<aside class="sidebar">
+    <div class="logo">🛒 超市销售分析平台</div>
+    <nav>
+        <a href="index.html" data-nav="dashboard">📊 数据总览</a>
+        <a href="category.html" data-nav="category">🧺 品类分析</a>
+        <a href="hourly.html" data-nav="hourly">⏰ 时段分析</a>
+        <a href="monthly.html" data-nav="monthly">📈 月度趋势</a>
+        <a href="store.html" data-nav="store">🏪 门店分析</a>
+        <a href="product.html" data-nav="product">🍎 商品分析</a>
+        <a href="data.html" data-nav="data">🗂️ 结果数据</a>
+    </nav>
+    <div class="sidebar-foot">王瑞祥，冀海梁<br>孟耀琛，郭晋阳</div>
+</aside>
+
+<main class="main">
+    <header class="topbar">
+        <h1>📊 数据总览</h1>
+        <div class="topbar-right">
+            <span id="today"></span>
+            <span id="userBox" style="font-weight:600;color:#3d4a63;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="logout()">退出登录</button>
+            <button class="btn" onclick="loadAll()">🔄 刷新数据</button>
+        </div>
+    </header>
+
+    <div class="content">
+        <!-- 核心指标卡 -->
+        <div class="kpi-grid" id="kpiGrid"></div>
+
+        <div class="row">
+            <div class="col-8 card">
+                <div class="card-title">📈 月度销售趋势 <span class="sub">半年销售额与订单量走势</span></div>
+                <div class="chart-box"><div id="chartMonthly" class="chart"></div></div>
+            </div>
+            <div class="col-4 card">
+                <div class="card-title">🧺 品类销售占比 <span class="sub">哪个品类最赚钱</span></div>
+                <div class="chart-box"><div id="chartCategory" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="row" style="margin-top: 20px;">
+            <div class="col-6 card">
+                <div class="card-title">⏰ 时段销售分布 <span class="sub">一天中哪个时段是高峰</span></div>
+                <div class="chart-box"><div id="chartHourly" class="chart"></div></div>
+            </div>
+            <div class="col-6 card">
+                <div class="card-title">🏪 门店业绩 TOP10 <span class="sub">哪几家门店业绩最好</span></div>
+                <div class="chart-box"><div id="chartStore" class="chart"></div></div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="js/echarts.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    async function loadAll() {
+        if (!(await ensureData())) return;
+        try {
+            const [kpi, monthly, cats, hourly, stores] = await Promise.all([
+                api('/api/dashboard/summary'),
+                api('/api/dashboard/monthly'),
+                api('/api/dashboard/category-share'),
+                api('/api/dashboard/hourly'),
+                api('/api/dashboard/store-top')
+            ]);
+            renderKpis(kpi);
+            renderMonthly(monthly);
+            renderCategory(cats);
+            renderHourly(hourly);
+            renderStores(stores);
+            toast('数据加载完成', 'success');
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    function renderKpis(kpi) {
+        const cards = [
+            { cls: 'kpi-blue', icon: '💰', label: '总销售额', value: fmtMoney(kpi.totalSales), extra: '半年累计' },
+            { cls: 'kpi-green', icon: '🧾', label: '订单总数', value: fmtInt(kpi.totalOrders), extra: '去重订单号' },
+            { cls: 'kpi-orange', icon: '📦', label: '商品销量', value: fmtInt(kpi.totalQuantity) + ' 件', extra: '半年累计销量' },
+            { cls: 'kpi-purple', icon: '🛍️', label: '客单价', value: fmtMoney(kpi.avgOrderAmount), extra: '销售额 ÷ 订单数' },
+            { cls: 'kpi-cyan', icon: '🏪', label: '门店数量', value: kpi.storeCount + ' 家', extra: '分布 5 个城市' },
+            { cls: 'kpi-pink', icon: '🍎', label: '商品种类', value: kpi.productCount + ' 种', extra: '覆盖 7 大品类' }
+        ];
+        document.getElementById('kpiGrid').innerHTML = cards.map(c =>
+            `<div class="kpi-card ${c.cls}">
+                <div class="kpi-label">${c.label}</div>
+                <div class="kpi-value">${c.value}</div>
+                <div class="kpi-extra">${c.extra}</div>
+                <span class="kpi-icon">${c.icon}</span>
+            </div>`).join('');
+    }
+
+    function renderMonthly(list) {
+        const el = document.getElementById('chartMonthly');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['销售额', '订单数'], top: 0 },
+            grid: { left: 10, right: 10, top: 36, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(m => monthLabel(m.month)), axisTick: { alignWithLabel: true } },
+            yAxis: [
+                { type: 'value', name: '销售额', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+                { type: 'value', name: '订单数', axisLabel: { formatter: v => (v / 1e4) + '万' } }
+            ],
+            series: [
+                {
+                    name: '销售额', type: 'bar', data: list.map(m => m.sales), barWidth: 26,
+                    itemStyle: { borderRadius: [6, 6, 0, 0], color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#6f93ff' }, { offset: 1, color: '#4f7cff' }] } }
+                },
+                {
+                    name: '订单数', type: 'line', yAxisIndex: 1, smooth: true, data: list.map(m => m.orders),
+                    itemStyle: { color: '#ff9f43' }, lineStyle: { width: 3 }, symbolSize: 7
+                }
+            ]
+        });
+    }
+
+    function renderCategory(list) {
+        const el = document.getElementById('chartCategory');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>${fmtMoney(p.value)}（${p.percent}%）` },
+            legend: { orient: 'vertical', right: 6, top: 'center', textStyle: { fontSize: 12 } },
+            series: [{
+                type: 'pie', radius: ['42%', '70%'], center: ['38%', '50%'],
+                itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+                label: { show: false }, emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+                data: list.map(c => ({ name: c.category, value: c.sales }))
+            }],
+            color: PALETTE
+        });
+    }
+
+    function renderHourly(list) {
+        const el = document.getElementById('chartHourly');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        const peak = list.reduce((a, b) => (a.sales > b.sales ? a : b));
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['销售额', '销量'], top: 0 },
+            grid: { left: 10, right: 10, top: 36, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(h => h.hour + '时') },
+            yAxis: [
+                { type: 'value', name: '销售额', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+                { type: 'value', name: '销量' }
+            ],
+            series: [
+                {
+                    name: '销售额', type: 'bar', data: list.map(h => h.sales), barWidth: 16,
+                    itemStyle: {
+                        borderRadius: [4, 4, 0, 0],
+                        color: p => p.dataIndex === list.indexOf(peak) ? '#ff9f43' : '#4f7cff'
+                    },
+                    markPoint: {
+                        data: [{ type: 'max', name: '高峰' }],
+                        symbolSize: 48, label: { fontSize: 10 }
+                    }
+                },
+                { name: '销量', type: 'line', yAxisIndex: 1, smooth: true, data: list.map(h => h.quantity), itemStyle: { color: '#2fbf8f' }, lineStyle: { width: 2.5 }, symbolSize: 5 }
+            ]
+        });
+    }
+
+    function renderStores(list) {
+        const el = document.getElementById('chartStore');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => {
+                const s = list.find(x => x.storeName === ps[0].name);
+                return `${s.storeName}（${s.city}）<br/>销售额：${fmtMoney(s.sales)}<br/>订单数：${fmtInt(s.orders)}`;
+            } },
+            grid: { left: 10, right: 46, top: 10, bottom: 0, containLabel: true },
+            xAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            yAxis: { type: 'category', inverse: true, data: list.map(s => s.storeName) },
+            series: [{
+                type: 'bar', data: list.map(s => s.sales), barWidth: 18,
+                label: { show: true, position: 'right', formatter: p => fmtMoney(p.value), fontSize: 10.5 },
+                itemStyle: {
+                    borderRadius: [0, 6, 6, 0],
+                    color: p => new echarts.graphic.LinearGradient(0, 0, 1, 0,
+                        [{ offset: 0, color: '#6f93ff' }, { offset: 1, color: '#2fbf8f' }])
+                }
+            }]
+        });
+    }
+
+    loadAll();
+</script>
+</body>
+</html>

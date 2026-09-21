@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>时段分析 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="hourly">
+
+<aside class="sidebar">
+    <div class="logo">🛒 超市销售分析平台</div>
+    <nav>
+        <a href="index.html" data-nav="dashboard">📊 数据总览</a>
+        <a href="category.html" data-nav="category">🧺 品类分析</a>
+        <a href="hourly.html" data-nav="hourly">⏰ 时段分析</a>
+        <a href="monthly.html" data-nav="monthly">📈 月度趋势</a>
+        <a href="store.html" data-nav="store">🏪 门店分析</a>
+        <a href="product.html" data-nav="product">🍎 商品分析</a>
+        <a href="data.html" data-nav="data">🗂️ 结果数据</a>
+    </nav>
+    <div class="sidebar-foot">王瑞祥，冀海梁<br>孟耀琛，郭晋阳</div>
+</aside>
+
+<main class="main">
+    <header class="topbar">
+        <h1>⏰ 时段分析</h1>
+        <div class="topbar-right">
+            <span id="today"></span>
+            <span id="userBox" style="font-weight:600;color:#3d4a63;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="logout()">退出登录</button>
+            <button class="btn" onclick="loadAll()">🔄 刷新数据</button>
+        </div>
+    </header>
+
+    <div class="content">
+        <div class="kpi-grid" id="insightGrid"></div>
+
+        <div class="row">
+            <div class="col-8 card">
+                <div class="card-title">⏰ 各时段销售分布 <span class="sub">销售额与销量按小时统计</span></div>
+                <div class="chart-box"><div id="chartHour" class="chart"></div></div>
+            </div>
+            <div class="col-4 card">
+                <div class="card-title">📅 各星期销售对比 <span class="sub">一周哪天生意最好</span></div>
+                <div class="chart-box"><div id="chartWeekday" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="row" style="margin-top: 20px;">
+            <div class="col card">
+                <div class="card-title">🏢 工作日 vs 周末 <span class="sub">同一时段两相对比</span></div>
+                <div class="chart-box"><div id="chartCompare" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">🔥 星期 × 时段 销售热力图 <span class="sub">颜色越深销售额越高</span></div>
+            <div class="chart-box"><div id="chartHeatmap" class="chart"></div></div>
+        </div>
+    </div>
+</main>
+
+<script src="js/echarts.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    async function loadAll() {
+        if (!(await ensureData())) return;
+        try {
+            const [dist, weekday, compare, heat] = await Promise.all([
+                api('/api/hour/distribution'),
+                api('/api/hour/weekday'),
+                api('/api/hour/weekday-compare'),
+                api('/api/hour/heatmap')
+            ]);
+            renderInsights(dist, weekday, compare);
+            renderHour(dist);
+            renderWeekday(weekday);
+            renderCompare(compare);
+            renderHeatmap(heat);
+            toast('数据加载完成', 'success');
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    function renderInsights(dist, weekday, compare) {
+        const sorted = [...dist].sort((a, b) => b.sales - a.sales);
+        const peak = sorted[0], second = sorted[1];
+        const bestDay = [...weekday].sort((a, b) => b.sales - a.sales)[0];
+        const wk = compare.filter(c => c.type === 'weekday').reduce((s, c) => s + Number(c.sales), 0);
+        const we = compare.filter(c => c.type === 'weekend').reduce((s, c) => s + Number(c.sales), 0);
+        const cards = [
+            { cls: 'kpi-orange', icon: '🔥', label: '销售高峰时段', value: peak ? peak.hour + ':00 - ' + (peak.hour + 1) + ':00' : '-', extra: peak ? '销售额 ' + fmtMoney(peak.sales) : '' },
+            { cls: 'kpi-blue', icon: '⏱️', label: '次高峰时段', value: second ? second.hour + ':00 - ' + (second.hour + 1) + ':00' : '-', extra: second ? '销售额 ' + fmtMoney(second.sales) : '' },
+            { cls: 'kpi-green', icon: '📅', label: '最旺星期', value: bestDay ? bestDay.dayName : '-', extra: bestDay ? '销售额 ' + fmtMoney(bestDay.sales) : '' },
+            { cls: 'kpi-purple', icon: '⚖️', label: '工作日 : 周末销售比', value: we > 0 ? (wk / we).toFixed(1) + ' : 1' : '-', extra: '工作日 ' + fmtMoney(wk) + ' / 周末 ' + fmtMoney(we) }
+        ];
+        document.getElementById('insightGrid').innerHTML = cards.map(c =>
+            `<div class="kpi-card ${c.cls}">
+                <div class="kpi-label">${c.label}</div>
+                <div class="kpi-value">${c.value}</div>
+                <div class="kpi-extra">${c.extra}</div>
+                <span class="kpi-icon">${c.icon}</span>
+            </div>`).join('');
+    }
+
+    function renderHour(list) {
+        const el = document.getElementById('chartHour');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        const peak = list.reduce((a, b) => (a.sales > b.sales ? a : b));
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['销售额', '销量'], top: 0 },
+            grid: { left: 10, right: 10, top: 36, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(h => h.hour + '时') },
+            yAxis: [
+                { type: 'value', name: '销售额', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+                { type: 'value', name: '销量' }
+            ],
+            series: [
+                {
+                    name: '销售额', type: 'bar', data: list.map(h => h.sales), barWidth: 16,
+                    itemStyle: {
+                        borderRadius: [4, 4, 0, 0],
+                        color: p => p.dataIndex === list.indexOf(peak) ? '#ff9f43' : '#4f7cff'
+                    },
+                    markLine: { silent: true, symbol: 'none', label: { formatter: '高峰 ' + peak.hour + '时', position: 'insideEndTop' }, data: [{ xAxis: list.indexOf(peak) }], lineStyle: { color: '#ff9f43', type: 'dashed' } }
+                },
+                { name: '销量', type: 'line', yAxisIndex: 1, smooth: true, data: list.map(h => h.quantity), itemStyle: { color: '#2fbf8f' }, lineStyle: { width: 2.5 }, symbolSize: 5 }
+            ]
+        });
+    }
+
+    function renderWeekday(list) {
+        const el = document.getElementById('chartWeekday');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        const best = list.reduce((a, b) => (a.sales > b.sales ? a : b));
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 10, right: 16, top: 30, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(w => w.dayName) },
+            yAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            series: [{
+                type: 'bar', data: list.map(w => w.sales), barWidth: 26,
+                label: { show: true, position: 'top', formatter: p => fmtMoney(p.value), fontSize: 10 },
+                itemStyle: {
+                    borderRadius: [6, 6, 0, 0],
+                    color: p => p.name === best.dayName ? '#ff9f43' : '#6f93ff'
+                }
+            }]
+        });
+    }
+
+    function renderCompare(list) {
+        const el = document.getElementById('chartCompare');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        const hours = [...new Set(list.map(c => c.hour))];
+        const wk = hours.map(h => list.find(c => c.hour === h && c.type === 'weekday')?.sales ?? 0);
+        const we = hours.map(h => list.find(c => c.hour === h && c.type === 'weekend')?.sales ?? 0);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['工作日', '周末'], top: 0 },
+            grid: { left: 10, right: 10, top: 36, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: hours.map(h => h + '时') },
+            yAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            series: [
+                { name: '工作日', type: 'bar', data: wk, barWidth: 12, itemStyle: { color: '#4f7cff', borderRadius: [3, 3, 0, 0] } },
+                { name: '周末', type: 'bar', data: we, barWidth: 12, itemStyle: { color: '#ff9f43', borderRadius: [3, 3, 0, 0] } }
+            ]
+        });
+    }
+
+    function renderHeatmap(list) {
+        const el = document.getElementById('chartHeatmap');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+        const hours = [...new Set(list.map(c => c.hour))].sort((a, b) => a - b);
+        const max = Math.max(...list.map(c => Number(c.sales)));
+        const data = list.map(c => [c.hour, c.dayOfWeek - 1, c.sales]);
+        initChart(el, {
+            tooltip: {
+                position: 'top',
+                formatter: p => `${days[p.value[1]]} ${p.value[0]}时<br/>销售额：${fmtMoney(p.value[2])}`
+            },
+            grid: { left: 10, right: 60, top: 10, bottom: 40, containLabel: true },
+            xAxis: { type: 'category', data: hours.map(h => h + '时'), splitArea: { show: true } },
+            yAxis: { type: 'category', data: days, splitArea: { show: true } },
+            visualMap: {
+                min: 0, max: max, calculable: true, orient: 'horizontal',
+                left: 'center', bottom: 0,
+                inRange: { color: ['#eef2ff', '#b9c8ff', '#6f93ff', '#3a5fe0', '#17265e'] },
+                textStyle: { fontSize: 11 }
+            },
+            series: [{
+                type: 'heatmap', data: data,
+                label: { show: false },
+                emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.3)' } }
+            }]
+        });
+    }
+
+    loadAll();
+</script>
+</body>
+</html>

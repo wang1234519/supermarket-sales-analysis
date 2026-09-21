@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.supermarket.mapper.ResultMapper">
+
+    <!-- ==================== 总览 ==================== -->
+
+    <select id="selectKpi" resultType="com.supermarket.dto.KpiSummary">
+        SELECT total_sales, total_orders, total_quantity, avg_order_amount
+        FROM result_kpi
+        LIMIT 1
+    </select>
+
+    <select id="countStores" resultType="long">
+        SELECT COUNT(*) FROM result_store_sales
+    </select>
+
+    <select id="countProducts" resultType="long">
+        SELECT COUNT(*) FROM result_product_sales
+    </select>
+
+    <select id="selectMonthSales" resultType="com.supermarket.dto.MonthlySales">
+        SELECT month, sales, orders, quantity, avg_order_amount, growth_rate
+        FROM result_month_sales
+        ORDER BY month
+    </select>
+
+    <!-- ==================== 品类 ==================== -->
+
+    <select id="selectCategorySales" resultType="com.supermarket.dto.CategorySales">
+        SELECT category, sales, orders, quantity, share
+        FROM result_category_sales
+        ORDER BY sales DESC
+    </select>
+
+    <select id="selectCategoryMonthSales" resultType="com.supermarket.dto.CategoryMonthSales">
+        SELECT month, category, sales
+        FROM result_category_month_sales
+        ORDER BY month, category
+    </select>
+
+    <select id="selectCategoryProducts" resultType="com.supermarket.dto.ProductSales">
+        SELECT product_id, product_name, category, price, sales, quantity, orders
+        FROM result_product_sales
+        WHERE category = #{category}
+        ORDER BY sales DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- ==================== 时段 ==================== -->
+
+    <select id="selectHourSales" resultType="com.supermarket.dto.HourSales">
+        SELECT hour, sales, orders, quantity
+        FROM result_hour_sales
+        ORDER BY hour
+    </select>
+
+    <select id="selectWeekdaySales" resultType="com.supermarket.dto.WeekdaySales">
+        SELECT day_of_week, sales, orders
+        FROM result_weekday_sales
+        ORDER BY day_of_week
+    </select>
+
+    <select id="selectHourWeekdaySales" resultType="com.supermarket.dto.HourTypeSales">
+        SELECT hour, day_type AS type, sales, orders
+        FROM result_hour_weekday_sales
+        ORDER BY hour, day_type
+    </select>
+
+    <select id="selectHeatmapSales" resultType="com.supermarket.dto.HeatCell">
+        SELECT day_of_week, hour, sales
+        FROM result_heatmap_sales
+        ORDER BY day_of_week, hour
+    </select>
+
+    <!-- ==================== 月度 ==================== -->
+
+    <select id="selectDailySales" resultType="com.supermarket.dto.DailySales">
+        SELECT day, sales, orders
+        FROM result_daily_sales
+        WHERE day LIKE CONCAT(#{month}, '%')
+        ORDER BY day
+    </select>
+
+    <!-- ==================== 门店 / 城市 ==================== -->
+
+    <select id="selectStoreSales" resultType="com.supermarket.dto.StoreSales">
+        SELECT store_id, store_name, city, sales, orders, quantity, avg_order_amount
+        FROM result_store_sales
+        ORDER BY sales DESC
+    </select>
+
+    <select id="selectStores" resultType="com.supermarket.dto.StoreInfo">
+        SELECT store_id, store_name, city
+        FROM result_store_sales
+        ORDER BY store_id
+    </select>
+
+    <select id="selectStoreMonthSales" resultType="com.supermarket.dto.MonthlySales">
+        SELECT month, sales, orders, quantity
+        FROM result_store_month_sales
+        WHERE store_id = #{storeId}
+        ORDER BY month
+    </select>
+
+    <select id="selectStoreCategorySales" resultType="com.supermarket.dto.CategorySales">
+        SELECT category, sales, orders, quantity
+        FROM result_store_category_sales
+        WHERE store_id = #{storeId}
+        ORDER BY sales DESC
+    </select>
+
+    <select id="selectStoreProductSales" resultType="com.supermarket.dto.ProductSales">
+        SELECT product_id, product_name, category, sales, quantity
+        FROM result_store_product_sales
+        WHERE store_id = #{storeId}
+        ORDER BY sales DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectCitySales" resultType="com.supermarket.dto.CitySales">
+        SELECT city, store_count, sales, orders, share
+        FROM result_city_sales
+        ORDER BY sales DESC
+    </select>
+
+    <select id="selectCityMonthSales" resultType="com.supermarket.dto.CityMonthSales">
+        SELECT month, city, sales
+        FROM result_city_month_sales
+        ORDER BY month, city
+    </select>
+
+    <!-- ==================== 商品 ==================== -->
+
+    <select id="selectProductSales" resultType="com.supermarket.dto.ProductSales">
+        SELECT product_id, product_name, category, price, sales, quantity, orders
+        FROM result_product_sales
+        ORDER BY sales DESC
+    </select>
+
+    <select id="selectProductCategories" resultType="string">
+        SELECT DISTINCT category
+        FROM result_product_sales
+        ORDER BY category
+    </select>
+</mapper>

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>品类分析 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="category">
+
+<aside class="sidebar">
+    <div class="logo">🛒 超市销售分析平台</div>
+    <nav>
+        <a href="index.html" data-nav="dashboard">📊 数据总览</a>
+        <a href="category.html" data-nav="category">🧺 品类分析</a>
+        <a href="hourly.html" data-nav="hourly">⏰ 时段分析</a>
+        <a href="monthly.html" data-nav="monthly">📈 月度趋势</a>
+        <a href="store.html" data-nav="store">🏪 门店分析</a>
+        <a href="product.html" data-nav="product">🍎 商品分析</a>
+        <a href="data.html" data-nav="data">🗂️ 结果数据</a>
+    </nav>
+    <div class="sidebar-foot">王瑞祥，冀海梁<br>孟耀琛，郭晋阳</div>
+</aside>
+
+<main class="main">
+    <header class="topbar">
+        <h1>🧺 品类分析</h1>
+        <div class="topbar-right">
+            <span id="today"></span>
+            <span id="userBox" style="font-weight:600;color:#3d4a63;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="logout()">退出登录</button>
+            <button class="btn" onclick="loadAll()">🔄 刷新数据</button>
+        </div>
+    </header>
+
+    <div class="content">
+        <div class="row">
+            <div class="col-6 card">
+                <div class="card-title">🧺 品类销售额排行 <span class="sub">哪个品类最赚钱</span></div>
+                <div class="chart-box"><div id="chartRank" class="chart"></div></div>
+            </div>
+            <div class="col-6 card">
+                <div class="card-title">🍩 品类销售占比 <span class="sub">各品类占销售额比例</span></div>
+                <div class="chart-box"><div id="chartPie" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="row" style="margin-top: 20px;">
+            <div class="col card">
+                <div class="card-title">📈 各品类月度销售趋势 <span class="sub">点击图例可筛选品类</span></div>
+                <div class="chart-box"><div id="chartTrend" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">🏆 品类热销商品 TOP10
+                <div class="filter-bar" style="margin-bottom: 0;">
+                    <select id="catSelect" onchange="loadProducts()"></select>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>排名</th><th>商品名称</th><th>品类</th><th class="num">单价</th>
+                        <th class="num">销量（件）</th><th class="num">销售额</th><th class="num">销售额占比</th>
+                    </tr>
+                    </thead>
+                    <tbody id="productTbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="js/echarts.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    let categories = [];
+
+    async function loadAll() {
+        if (!(await ensureData())) return;
+        try {
+            const [overview, trend] = await Promise.all([
+                api('/api/category/overview'),
+                api('/api/category/trend')
+            ]);
+            categories = await api('/api/category/categories');
+            renderRank(overview);
+            renderPie(overview);
+            renderTrend(trend);
+            renderCatSelect(overview);
+            await loadProducts();
+            toast('数据加载完成', 'success');
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    function renderCatSelect(overview) {
+        const sel = document.getElementById('catSelect');
+        sel.innerHTML = overview.map(c => `<option value="${esc(c.category)}">${esc(c.category)}</option>`).join('');
+    }
+
+    function renderRank(list) {
+        const el = document.getElementById('chartRank');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 10, right: 16, top: 30, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(c => c.category), axisLabel: { interval: 0, rotate: list.length > 6 ? 18 : 0 } },
+            yAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            series: [{
+                type: 'bar', data: list.map(c => c.sales), barWidth: 34,
+                label: { show: true, position: 'top', formatter: p => fmtMoney(p.value), fontSize: 10.5 },
+                itemStyle: {
+                    borderRadius: [6, 6, 0, 0],
+                    color: p => new echarts.graphic.LinearGradient(0, 0, 0, 1,
+                        [{ offset: 0, color: PALETTE[p.dataIndex % PALETTE.length] }, { offset: 1, color: '#dce4f5' }])
+                }
+            }]
+        });
+    }
+
+    function renderPie(list) {
+        const el = document.getElementById('chartPie');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>${fmtMoney(p.value)}（${p.percent}%）` },
+            legend: { orient: 'vertical', right: 6, top: 'center', textStyle: { fontSize: 12 } },
+            series: [{
+                type: 'pie', radius: ['40%', '68%'], center: ['38%', '50%'],
+                itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+                label: { show: false }, emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+                data: list.map(c => ({ name: c.category, value: c.sales }))
+            }],
+            color: PALETTE
+        });
+    }
+
+    function renderTrend(list) {
+        const el = document.getElementById('chartTrend');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        const months = [...new Set(list.map(t => t.month))];
+        const catNames = [...new Set(list.map(t => t.category))];
+        const series = catNames.map((cat, i) => ({
+            name: cat, type: 'line', smooth: true, symbolSize: 6,
+            itemStyle: { color: PALETTE[i % PALETTE.length] },
+            lineStyle: { width: 2.5 },
+            data: months.map(m => {
+                const hit = list.find(t => t.month === m && t.category === cat);
+                return hit ? hit.sales : 0;
+            })
+        }));
+        initChart(el, {
+            tooltip: { trigger: 'axis' },
+            legend: { top: 0, type: 'scroll' },
+            grid: { left: 10, right: 10, top: 40, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: months.map(monthLabel), boundaryGap: false },
+            yAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            series: series,
+            color: PALETTE
+        });
+    }
+
+    async function loadProducts() {
+        const cat = document.getElementById('catSelect').value;
+        try {
+            const list = await api('/api/category/top-products?category=' + encodeURIComponent(cat));
+            const total = list.reduce((s, p) => s + Number(p.sales), 0) || 1;
+            document.getElementById('productTbody').innerHTML = list.map((p, i) => `
+                <tr>
+                    <td><span class="rank-badge ${i < 3 ? 'rank-' + (i + 1) : ''}">${i + 1}</span></td>
+                    <td>${esc(p.productName)}</td>
+                    <td><span class="badge">${esc(p.category)}</span></td>
+                    <td class="num">${Number(p.price).toFixed(2)}</td>
+                    <td class="num">${fmtInt(p.quantity)}</td>
+                    <td class="num"><b>${fmtMoney(p.sales)}</b></td>
+                    <td class="num">${(p.sales / total * 100).toFixed(2)}%</td>
+                </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8699;">暂无数据</td></tr>';
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    loadAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>结果数据 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="data">
+
+<aside class="sidebar">
+    <div class="logo">🛒 超市销售分析平台</div>
+    <nav>
+        <a href="index.html" data-nav="dashboard">📊 数据总览</a>
+        <a href="category.html" data-nav="category">🧺 品类分析</a>
+        <a href="hourly.html" data-nav="hourly">⏰ 时段分析</a>
+        <a href="monthly.html" data-nav="monthly">📈 月度趋势</a>
+        <a href="store.html" data-nav="store">🏪 门店分析</a>
+        <a href="product.html" data-nav="product">🍎 商品分析</a>
+        <a href="data.html" data-nav="data">🗂️ 结果数据</a>
+    </nav>
+    <div class="sidebar-foot">王瑞祥，冀海梁<br>孟耀琛，郭晋阳</div>
+</aside>
+
+<main class="main">
+    <header class="topbar">
+        <h1>🗂️ 结果数据</h1>
+        <div class="topbar-right">
+            <span id="today"></span>
+            <span id="userBox" style="font-weight:600;color:#3d4a63;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="logout()">退出登录</button>
+            <button class="btn" onclick="loadData()">🔄 刷新数据</button>
+        </div>
+    </header>
+
+    <div class="content">
+        <div class="card">
+            <div class="card-title">📋 结果表明细浏览
+                <span class="sub">数据由虚拟机 Hive 分析产出、Sqoop 导出到 MySQL，本页只读展示</span>
+                <div class="filter-bar" style="margin-bottom: 0;">
+                    <select id="tableSelect" onchange="page=1;loadData()"></select>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table" id="dataTable">
+                    <thead id="thead"></thead>
+                    <tbody id="tbody"></tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <span id="pageInfo"></span>
+                <button class="btn btn-sm btn-ghost" id="btnPrev" onclick="page--;loadData()">上一页</button>
+                <button class="btn btn-sm btn-ghost" id="btnNext" onclick="page++;loadData()">下一页</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="js/echarts.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    // 各结果表列名 → 中文表头
+    const COLUMNS = {
+        result_kpi: { total_sales: '总销售额', total_orders: '订单总数', total_quantity: '总销量', avg_order_amount: '客单价' },
+        result_category_sales: { category: '品类', sales: '销售额', orders: '订单数', quantity: '销量', share: '占比(%)' },
+        result_hour_sales: { hour: '小时', sales: '销售额', orders: '订单数', quantity: '销量' },
+        result_month_sales: { month: '月份', sales: '销售额', orders: '订单数', quantity: '销量', avg_order_amount: '客单价', growth_rate: '环比(%)' },
+        result_store_sales: { store_id: '门店编号', store_name: '门店名称', city: '城市', sales: '销售额', orders: '订单数', quantity: '销量', avg_order_amount: '客单价' },
+        result_city_sales: { city: '城市', store_count: '门店数', sales: '销售额', orders: '订单数', share: '占比(%)' },
+        result_product_sales: { product_id: '商品编号', product_name: '商品名称', category: '品类', price: '单价', sales: '销售额', quantity: '销量', orders: '成交笔数' },
+        result_weekday_sales: { day_of_week: '星期(1=周一)', sales: '销售额', orders: '订单数' },
+        result_hour_weekday_sales: { hour: '小时', day_type: '类型(工作日/周末)', sales: '销售额', orders: '订单数' },
+        result_heatmap_sales: { day_of_week: '星期(1=周一)', hour: '小时', sales: '销售额' },
+        result_daily_sales: { day: '日期', sales: '销售额', orders: '订单数' },
+        result_category_month_sales: { month: '月份', category: '品类', sales: '销售额' },
+        result_city_month_sales: { month: '月份', city: '城市', sales: '销售额' },
+        result_store_month_sales: { store_id: '门店编号', month: '月份', sales: '销售额', orders: '订单数', quantity: '销量' },
+        result_store_category_sales: { store_id: '门店编号', category: '品类', sales: '销售额', orders: '订单数', quantity: '销量' },
+        result_store_product_sales: { store_id: '门店编号', product_id: '商品编号', product_name: '商品名称', category: '品类', sales: '销售额', quantity: '销量' }
+    };
+
+    let page = 1;
+    const pageSize = 15;
+    let totalPages = 1;
+
+    async function loadTables() {
+        try {
+            const tables = await api('/api/data/tables');
+            const sel = document.getElementById('tableSelect');
+            sel.innerHTML = tables.map(t =>
+                `<option value="${t.name}">${t.label}（${t.name}）</option>`).join('');
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    async function loadData() {
+        const table = document.getElementById('tableSelect').value;
+        if (!table) return;
+        try {
+            const data = await api('/api/data/' + table + '?page=' + page + '&size=' + pageSize);
+            totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+            if (page > totalPages) { page = totalPages; return loadData(); }
+
+            // 表头（按返回的第一行键顺序，映射中文名）
+            const cols = data.list.length ? Object.keys(data.list[0]) : [];
+            document.getElementById('thead').innerHTML = '<tr>' + cols.map(k =>
+                `<th>${esc(COLUMNS[table][k] || k)}</th>`).join('') + '</tr>';
+
+            document.getElementById('tbody').innerHTML = data.list.map(row =>
+                '<tr>' + cols.map(k => {
+                    const v = row[k];
+                    const val = v === null || v === undefined ? '<span style="color:#b0b9ca;">NULL</span>' : esc(v);
+                    const isNum = typeof v === 'number';
+                    return `<td class="${isNum ? 'num' : ''}">${val}</td>`;
+                }).join('') + '</tr>'
+            ).join('') || '<tr><td colspan="10" style="text-align:center;color:#7a8699;">该表暂无数据</td></tr>';
+
+            document.getElementById('pageInfo').textContent =
+                '共 ' + data.total + ' 行，第 ' + data.page + ' / ' + totalPages + ' 页';
+            document.getElementById('btnPrev').disabled = page <= 1;
+            document.getElementById('btnNext').disabled = page >= totalPages;
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    (async () => {
+        await loadTables();
+        await loadData();
+    })();
+</script>
+</body>
+</html>

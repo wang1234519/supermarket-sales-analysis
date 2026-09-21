@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品分析 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="product">
+
+<aside class="sidebar">
+    <div class="logo">🛒 超市销售分析平台</div>
+    <nav>
+        <a href="index.html" data-nav="dashboard">📊 数据总览</a>
+        <a href="category.html" data-nav="category">🧺 品类分析</a>
+        <a href="hourly.html" data-nav="hourly">⏰ 时段分析</a>
+        <a href="monthly.html" data-nav="monthly">📈 月度趋势</a>
+        <a href="store.html" data-nav="store">🏪 门店分析</a>
+        <a href="product.html" data-nav="product">🍎 商品分析</a>
+        <a href="data.html" data-nav="data">🗂️ 结果数据</a>
+    </nav>
+    <div class="sidebar-foot">王瑞祥，冀海梁<br>孟耀琛，郭晋阳</div>
+</aside>
+
+<main class="main">
+    <header class="topbar">
+        <h1>🍎 商品分析</h1>
+        <div class="topbar-right">
+            <span id="today"></span>
+            <span id="userBox" style="font-weight:600;color:#3d4a63;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="logout()">退出登录</button>
+            <button class="btn" onclick="loadAll()">🔄 刷新数据</button>
+        </div>
+    </header>
+
+    <div class="content">
+        <div class="row">
+            <div class="col-6 card">
+                <div class="card-title">🔥 畅销商品 TOP10 <span class="sub">卖得最好的商品</span></div>
+                <div class="chart-box"><div id="chartTop" class="chart"></div></div>
+            </div>
+            <div class="col-6 card">
+                <div class="card-title">🐌 滞销商品 TOP10 <span class="sub">销量垫底，可考虑促销或下架</span></div>
+                <div class="chart-box"><div id="chartSlow" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <div class="card-title">📋 商品销售明细
+                <div class="filter-bar" style="margin-bottom: 0;">
+                    <input type="search" id="keyword" placeholder="🔍 搜索商品名称…" style="width: 200px;"
+                           oninput="page=1;renderTable()">
+                    <select id="catFilter" onchange="page=1;renderTable()">
+                        <option value="">全部品类</option>
+                    </select>
+                    <select id="sortSelect" onchange="page=1;renderTable()">
+                        <option value="sales_desc">按销售额 ↓</option>
+                        <option value="sales_asc">按销售额 ↑</option>
+                        <option value="quantity_desc">按销量 ↓</option>
+                        <option value="price_desc">按单价 ↓</option>
+                        <option value="price_asc">按单价 ↑</option>
+                        <option value="product_id">按商品编号</option>
+                    </select>
+                    <button class="btn btn-sm btn-ghost" onclick="page=1;renderTable()">查询</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>商品编号</th><th>商品名称</th><th>品类</th><th class="num">单价</th>
+                        <th class="num">销量（件）</th><th class="num">成交笔数</th><th class="num">销售额</th>
+                    </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <span id="pageInfo"></span>
+                <button class="btn btn-sm btn-ghost" id="btnPrev" onclick="page--;renderTable()">上一页</button>
+                <button class="btn btn-sm btn-ghost" id="btnNext" onclick="page++;renderTable()">下一页</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="js/echarts.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    // 全量结果（Hive 计算结果表，仅 39 行，筛选排序全在前端完成）
+    let products = [];
+    let page = 1;
+    const pageSize = 10;
+
+    async function loadAll() {
+        if (!(await ensureData())) return;
+        try {
+            const [list, cats] = await Promise.all([
+                api('/api/product/list'),
+                api('/api/product/categories')
+            ]);
+            products = list;
+            document.getElementById('catFilter').innerHTML = '<option value="">全部品类</option>'
+                + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+            renderTop();
+            renderSlow();
+            renderTable();
+            toast('数据加载完成', 'success');
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    function horizontalBar(el, list, color) {
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 10, right: 46, top: 10, bottom: 0, containLabel: true },
+            xAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            yAxis: { type: 'category', inverse: true, data: list.map(p => p.productName) },
+            series: [{
+                type: 'bar', data: list.map(p => p.sales), barWidth: 16,
+                label: { show: true, position: 'right', formatter: p => fmtMoney(p.value), fontSize: 10 },
+                itemStyle: { borderRadius: [0, 6, 6, 0], color: color }
+            }]
+        });
+    }
+
+    function renderTop() {
+        horizontalBar(document.getElementById('chartTop'),
+            [...products].sort((a, b) => b.sales - a.sales).slice(0, 10), '#4f7cff');
+    }
+
+    function renderSlow() {
+        horizontalBar(document.getElementById('chartSlow'),
+            [...products].sort((a, b) => a.sales - b.sales).slice(0, 10), '#ef5b6b');
+    }
+
+    function filtered() {
+        const keyword = document.getElementById('keyword').value.trim().toLowerCase();
+        const category = document.getElementById('catFilter').value;
+        const sort = document.getElementById('sortSelect').value;
+        let list = products.filter(p =>
+            (!category || p.category === category) &&
+            (!keyword || String(p.productName).toLowerCase().includes(keyword)));
+        const by = {
+            sales_desc: (a, b) => b.sales - a.sales,
+            sales_asc: (a, b) => a.sales - b.sales,
+            quantity_desc: (a, b) => b.quantity - a.quantity,
+            price_desc: (a, b) => b.price - a.price,
+            price_asc: (a, b) => a.price - b.price,
+            product_id: (a, b) => a.productId - b.productId
+        }[sort];
+        return list.sort(by);
+    }
+
+    function renderTable() {
+        const list = filtered();
+        const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+        if (page > totalPages) page = totalPages;
+        if (page < 1) page = 1;
+        const rows = list.slice((page - 1) * pageSize, page * pageSize);
+        document.getElementById('tableBody').innerHTML = rows.map(p => `
+            <tr>
+                <td>${p.productId}</td>
+                <td><b>${esc(p.productName)}</b></td>
+                <td><span class="badge">${esc(p.category)}</span></td>
+                <td class="num">${Number(p.price).toFixed(2)}</td>
+                <td class="num">${fmtInt(p.quantity)}</td>
+                <td class="num">${fmtInt(p.orders)}</td>
+                <td class="num"><b>${fmtMoney(p.sales)}</b></td>
+            </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8699;">没有符合条件的商品</td></tr>';
+        document.getElementById('pageInfo').textContent =
+            '共 ' + list.length + ' 种商品，第 ' + page + ' / ' + totalPages + ' 页';
+        document.getElementById('btnPrev').disabled = page <= 1;
+        document.getElementById('btnNext').disabled = page >= totalPages;
+    }
+
+    loadAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="auth-body">
+
+<div class="auth-card">
+    <div class="auth-logo">🛒</div>
+    <h1>超市销售分析平台</h1>
+    <div class="sub">基于 Hive + Sqoop + SpringBoot + ECharts</div>
+
+    <div class="auth-field">
+        <label>用户名</label>
+        <input type="text" id="username" placeholder="请输入用户名" autocomplete="username">
+    </div>
+    <div class="auth-field">
+        <label>密码</label>
+        <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password">
+    </div>
+
+    <div class="auth-msg" id="msg"></div>
+
+    <button class="btn" id="btnLogin" onclick="doLogin()">登 录</button>
+
+    <div class="auth-foot">
+        还没有账号？<a href="register.html">立即注册</a>
+        <div style="margin-top: 8px; color: #b0b9ca; font-size: 12px;">默认管理员：admin / admin123</div>
+    </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+    // 已登录则直接进入首页
+    (async () => {
+        try {
+            const me = await fetch('/api/auth/me').then(r => r.ok ? r.json() : null);
+            if (me && me.username) location.href = '/index.html';
+        } catch (e) { /* ignore */ }
+    })();
+
+    async function doLogin() {
+        const msg = document.getElementById('msg');
+        const btn = document.getElementById('btnLogin');
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        if (!username || !password) {
+            msg.className = 'auth-msg show';
+            msg.textContent = '请输入用户名和密码';
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = '登录中…';
+        try {
+            const data = await postApi('/api/auth/login', {
+                username: username,
+                password: password
+            });
+            if (data.success) {
+                toast('登录成功，欢迎回来！', 'success');
+                setTimeout(() => location.href = '/index.html', 300);
+            } else {
+                msg.className = 'auth-msg show';
+                msg.textContent = data.message || '登录失败';
+            }
+        } catch (e) {
+            msg.className = 'auth-msg show';
+            msg.textContent = e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '登 录';
+        }
+    }
+
+    document.getElementById('password').addEventListener('keydown', e => {
+        if (e.key === 'Enter') doLogin();
+    });
+</script>
+</body>
+</html>

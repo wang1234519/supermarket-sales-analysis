@@ -1,0 +1,34 @@
+server:
+  port: 8080
+  servlet:
+    session:
+      timeout: 30m   # 会话超时 30 分钟
+
+spring:
+  application:
+    name: supermarket-sales-analysis
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 首次启动会自动创建数据库 supermarket_sales（无需手工建库）
+    url: jdbc:mysql://localhost:3306/supermarket_sales?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&rewriteBatchedStatements=true
+    username: root
+    # 改成你本地 MySQL 的密码，也可以通过环境变量 MYSQL_PASSWORD 覆盖
+    password: root
+  sql:
+    init:
+      # 每次启动自动执行 schema.sql，创建 16 张结果表（幂等，可重复执行）
+      # 结果表由虚拟机 Hive 分析 + Sqoop 导出填充，本项目只读取不写入
+      mode: always
+      schema-locations: classpath:schema.sql
+      encoding: UTF-8
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    # 下划线字段自动映射驼峰属性
+    map-underscore-to-camel-case: true
+
+logging:
+  level:
+    root: info
+    com.supermarket.mapper: debug

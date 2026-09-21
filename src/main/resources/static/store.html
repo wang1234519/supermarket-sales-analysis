@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>门店分析 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="store">
+
+<aside class="sidebar">
+    <div class="logo">🛒 超市销售分析平台</div>
+    <nav>
+        <a href="index.html" data-nav="dashboard">📊 数据总览</a>
+        <a href="category.html" data-nav="category">🧺 品类分析</a>
+        <a href="hourly.html" data-nav="hourly">⏰ 时段分析</a>
+        <a href="monthly.html" data-nav="monthly">📈 月度趋势</a>
+        <a href="store.html" data-nav="store">🏪 门店分析</a>
+        <a href="product.html" data-nav="product">🍎 商品分析</a>
+        <a href="data.html" data-nav="data">🗂️ 结果数据</a>
+    </nav>
+    <div class="sidebar-foot">王瑞祥，冀海梁<br>孟耀琛，郭晋阳</div>
+</aside>
+
+<main class="main">
+    <header class="topbar">
+        <h1>🏪 门店分析</h1>
+        <div class="topbar-right">
+            <span id="today"></span>
+            <span id="userBox" style="font-weight:600;color:#3d4a63;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="logout()">退出登录</button>
+            <button class="btn" onclick="loadAll()">🔄 刷新数据</button>
+        </div>
+    </header>
+
+    <div class="content">
+        <div class="row">
+            <div class="col-6 card">
+                <div class="card-title">🏙️ 城市消费力排行 <span class="sub">哪个城市消费力最强</span></div>
+                <div class="chart-box"><div id="chartCity" class="chart"></div></div>
+            </div>
+            <div class="col-6 card">
+                <div class="card-title">🍩 城市销售占比 <span class="sub">各城市销售额占比</span></div>
+                <div class="chart-box"><div id="chartCityPie" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="row" style="margin-top: 20px;">
+            <div class="col card">
+                <div class="card-title">📈 各城市月度销售趋势 <span class="sub">点击图例可筛选城市</span></div>
+                <div class="chart-box"><div id="chartCityTrend" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">🏆 门店业绩排行榜 <span class="sub">全部 18 家门店按销售额排序</span></div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>排名</th><th>门店名称</th><th>城市</th><th class="num">销售额</th>
+                        <th class="num">订单数</th><th class="num">销量（件）</th><th class="num">客单价</th>
+                    </tr>
+                    </thead>
+                    <tbody id="rankTbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">🔍 门店经营详情
+                <div class="filter-bar" style="margin-bottom: 0;">
+                    <select id="storeSelect" onchange="loadDetail()"></select>
+                </div>
+            </div>
+            <div class="kpi-grid" id="storeKpis"></div>
+            <div class="row">
+                <div class="col-6 card">
+                    <div class="card-title">📈 月度销售走势</div>
+                    <div class="chart-box"><div id="chartStoreMonthly" class="chart-sm"></div></div>
+                </div>
+                <div class="col-6 card">
+                    <div class="card-title">🧺 品类销售构成</div>
+                    <div class="chart-box"><div id="chartStoreCat" class="chart-sm"></div></div>
+                </div>
+            </div>
+            <div class="card" style="margin-top: 20px; margin-bottom: 0;">
+                <div class="card-title">🏆 该店热销商品 TOP10</div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                        <tr>
+                            <th>排名</th><th>商品名称</th><th>品类</th><th class="num">销量（件）</th><th class="num">销售额</th>
+                        </tr>
+                        </thead>
+                        <tbody id="storeProductTbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script src="js/echarts.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    async function loadAll() {
+        if (!(await ensureData())) return;
+        try {
+            const [ranking, cities, cityTrend, stores] = await Promise.all([
+                api('/api/store/ranking'),
+                api('/api/store/cities'),
+                api('/api/store/city-trend'),
+                api('/api/store/stores')
+            ]);
+            renderCity(cities);
+            renderCityPie(cities);
+            renderCityTrend(cityTrend);
+            renderRanking(ranking);
+            renderStoreSelect(stores);
+            await loadDetail();
+            toast('数据加载完成', 'success');
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    function renderCity(list) {
+        const el = document.getElementById('chartCity');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 10, right: 16, top: 30, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(c => c.city) },
+            yAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            series: [{
+                type: 'bar', data: list.map(c => c.sales), barWidth: 36,
+                label: { show: true, position: 'top', formatter: p => fmtMoney(p.value), fontSize: 10.5 },
+                itemStyle: {
+                    borderRadius: [6, 6, 0, 0],
+                    color: p => new echarts.graphic.LinearGradient(0, 0, 0, 1,
+                        [{ offset: 0, color: PALETTE[p.dataIndex % PALETTE.length] }, { offset: 1, color: '#dce4f5' }])
+                }
+            }]
+        });
+    }
+
+    function renderCityPie(list) {
+        const el = document.getElementById('chartCityPie');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'item', formatter: p => `${p.name}（${list.find(c => c.city === p.name)?.storeCount} 家店）<br/>${fmtMoney(p.value)}（${p.percent}%）` },
+            legend: { orient: 'vertical', right: 6, top: 'center', textStyle: { fontSize: 12 } },
+            series: [{
+                type: 'pie', radius: ['40%', '68%'], center: ['38%', '50%'],
+                itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+                label: { show: false }, emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+                data: list.map(c => ({ name: c.city, value: c.sales }))
+            }],
+            color: PALETTE
+        });
+    }
+
+    function renderCityTrend(list) {
+        const el = document.getElementById('chartCityTrend');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        const months = [...new Set(list.map(t => t.month))];
+        const cities = [...new Set(list.map(t => t.city))];
+        const series = cities.map((city, i) => ({
+            name: city, type: 'line', smooth: true, symbolSize: 6,
+            itemStyle: { color: PALETTE[i % PALETTE.length] }, lineStyle: { width: 2.5 },
+            data: months.map(m => list.find(t => t.month === m && t.city === city)?.sales ?? 0)
+        }));
+        initChart(el, {
+            tooltip: { trigger: 'axis' },
+            legend: { top: 0 },
+            grid: { left: 10, right: 10, top: 40, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: months.map(monthLabel), boundaryGap: false },
+            yAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            series: series,
+            color: PALETTE
+        });
+    }
+
+    function renderRanking(list) {
+        document.getElementById('rankTbody').innerHTML = list.map((s, i) => `
+            <tr>
+                <td><span class="rank-badge ${i < 3 ? 'rank-' + (i + 1) : ''}">${i + 1}</span></td>
+                <td><b>${esc(s.storeName)}</b></td>
+                <td><span class="badge">${esc(s.city)}</span></td>
+                <td class="num"><b>${fmtMoney(s.sales)}</b></td>
+                <td class="num">${fmtInt(s.orders)}</td>
+                <td class="num">${fmtInt(s.quantity)}</td>
+                <td class="num">${fmtMoney(s.avgOrderAmount)}</td>
+            </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8699;">暂无数据</td></tr>';
+    }
+
+    function renderStoreSelect(stores) {
+        const sel = document.getElementById('storeSelect');
+        sel.innerHTML = stores.map(s => `<option value="${s.storeId}">${esc(s.storeName)}（${esc(s.city)}）</option>`).join('');
+    }
+
+    async function loadDetail() {
+        const id = document.getElementById('storeSelect').value;
+        if (!id) return;
+        try {
+            const d = await api('/api/store/' + id + '/detail');
+            renderStoreKpis(d.overview);
+            renderStoreMonthly(d.monthly);
+            renderStoreCat(d.categories);
+            renderStoreProducts(d.topProducts);
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    function renderStoreKpis(o) {
+        const cards = [
+            { cls: 'kpi-blue', icon: '💰', label: '门店销售额', value: fmtMoney(o.sales) },
+            { cls: 'kpi-green', icon: '🧾', label: '订单数', value: fmtInt(o.orders) },
+            { cls: 'kpi-orange', icon: '📦', label: '销量', value: fmtInt(o.quantity) + ' 件' },
+            { cls: 'kpi-purple', icon: '🛍️', label: '客单价', value: fmtMoney(o.avgOrderAmount) }
+        ];
+        document.getElementById('storeKpis').innerHTML = cards.map(c =>
+            `<div class="kpi-card ${c.cls}">
+                <div class="kpi-label">${c.label}</div>
+                <div class="kpi-value">${c.value}</div>
+                <span class="kpi-icon">${c.icon}</span>
+            </div>`).join('');
+    }
+
+    function renderStoreMonthly(list) {
+        const el = document.getElementById('chartStoreMonthly');
+        if (isEmpty(list)) { showEmptyChart(el, '该店暂无销售数据'); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            grid: { left: 10, right: 10, top: 30, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(m => monthLabel(m.month)) },
+            yAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+            series: [{
+                type: 'bar', data: list.map(m => m.sales), barWidth: 26,
+                label: { show: true, position: 'top', formatter: p => fmtMoney(p.value), fontSize: 10 },
+                itemStyle: { borderRadius: [6, 6, 0, 0], color: '#4f7cff' }
+            }]
+        });
+    }
+
+    function renderStoreCat(list) {
+        const el = document.getElementById('chartStoreCat');
+        if (isEmpty(list)) { showEmptyChart(el, '该店暂无销售数据'); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>${fmtMoney(p.value)}（${p.percent}%）` },
+            legend: { orient: 'vertical', right: 6, top: 'center', textStyle: { fontSize: 11 } },
+            series: [{
+                type: 'pie', radius: ['36%', '64%'], center: ['36%', '50%'],
+                itemStyle: { borderRadius: 5, borderColor: '#fff', borderWidth: 2 },
+                label: { show: false }, emphasis: { label: { show: true, fontSize: 13, fontWeight: 'bold' } },
+                data: list.map(c => ({ name: c.category, value: c.sales }))
+            }],
+            color: PALETTE
+        });
+    }
+
+    function renderStoreProducts(list) {
+        document.getElementById('storeProductTbody').innerHTML = list.map((p, i) => `
+            <tr>
+                <td><span class="rank-badge ${i < 3 ? 'rank-' + (i + 1) : ''}">${i + 1}</span></td>
+                <td>${esc(p.productName)}</td>
+                <td><span class="badge">${esc(p.category)}</span></td>
+                <td class="num">${fmtInt(p.quantity)}</td>
+                <td class="num"><b>${fmtMoney(p.sales)}</b></td>
+            </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#7a8699;">该店暂无销售数据</td></tr>';
+    }
+
+    loadAll();
+</script>
+</body>
+</html>

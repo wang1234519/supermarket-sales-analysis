@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>月度趋势 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="monthly">
+
+<aside class="sidebar">
+    <div class="logo">🛒 超市销售分析平台</div>
+    <nav>
+        <a href="index.html" data-nav="dashboard">📊 数据总览</a>
+        <a href="category.html" data-nav="category">🧺 品类分析</a>
+        <a href="hourly.html" data-nav="hourly">⏰ 时段分析</a>
+        <a href="monthly.html" data-nav="monthly">📈 月度趋势</a>
+        <a href="store.html" data-nav="store">🏪 门店分析</a>
+        <a href="product.html" data-nav="product">🍎 商品分析</a>
+        <a href="data.html" data-nav="data">🗂️ 结果数据</a>
+    </nav>
+    <div class="sidebar-foot">王瑞祥，冀海梁<br>孟耀琛，郭晋阳</div>
+</aside>
+
+<main class="main">
+    <header class="topbar">
+        <h1>📈 月度趋势</h1>
+        <div class="topbar-right">
+            <span id="today"></span>
+            <span id="userBox" style="font-weight:600;color:#3d4a63;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="logout()">退出登录</button>
+            <button class="btn" onclick="loadAll()">🔄 刷新数据</button>
+        </div>
+    </header>
+
+    <div class="content">
+        <div class="row">
+            <div class="col-8 card">
+                <div class="card-title">📈 月度销售额与订单量 <span class="sub">生意越来越好还是变差</span></div>
+                <div class="chart-box"><div id="chartTrend" class="chart"></div></div>
+            </div>
+            <div class="col-4 card">
+                <div class="card-title">📊 月度环比增长率 <span class="sub">较上月增长 %（首月无环比）</span></div>
+                <div class="chart-box"><div id="chartGrowth" class="chart"></div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📋 月度经营明细表</div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>月份</th><th class="num">销售额</th><th class="num">订单数</th>
+                        <th class="num">销量（件）</th><th class="num">客单价</th><th class="num">环比增长</th>
+                    </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📅 每日销售走势
+                <div class="filter-bar" style="margin-bottom: 0;">
+                    <select id="monthSelect" onchange="loadDaily()"></select>
+                </div>
+            </div>
+            <div class="chart-box"><div id="chartDaily" class="chart"></div></div>
+        </div>
+    </div>
+</main>
+
+<script src="js/echarts.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    let trendData = [];
+
+    async function loadAll() {
+        if (!(await ensureData())) return;
+        try {
+            trendData = await api('/api/monthly/trend');
+            renderTrend(trendData);
+            renderGrowth(trendData);
+            renderTable(trendData);
+            renderMonthSelect(trendData);
+            await loadDaily();
+            toast('数据加载完成', 'success');
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    function renderTrend(list) {
+        const el = document.getElementById('chartTrend');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            legend: { data: ['销售额', '订单数'], top: 0 },
+            grid: { left: 10, right: 10, top: 36, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(m => monthLabel(m.month)), axisTick: { alignWithLabel: true } },
+            yAxis: [
+                { type: 'value', name: '销售额', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+                { type: 'value', name: '订单数', axisLabel: { formatter: v => (v / 1e4) + '万' } }
+            ],
+            series: [
+                {
+                    name: '销售额', type: 'bar', data: list.map(m => m.sales), barWidth: 30,
+                    label: { show: true, position: 'top', formatter: p => fmtMoney(p.value), fontSize: 10.5 },
+                    itemStyle: { borderRadius: [6, 6, 0, 0], color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#6f93ff' }, { offset: 1, color: '#4f7cff' }] } }
+                },
+                { name: '订单数', type: 'line', yAxisIndex: 1, smooth: true, data: list.map(m => m.orders), itemStyle: { color: '#ff9f43' }, lineStyle: { width: 3 }, symbolSize: 7 }
+            ]
+        });
+    }
+
+    function renderGrowth(list) {
+        const el = document.getElementById('chartGrowth');
+        if (isEmpty(list)) { showEmptyChart(el); return; }
+        hideEmptyChart(el);
+        initChart(el, {
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: ps => `${ps[0].name}<br/>环比：${ps[0].value}%` },
+            grid: { left: 10, right: 16, top: 40, bottom: 0, containLabel: true },
+            xAxis: { type: 'category', data: list.map(m => monthLabel(m.month)) },
+            yAxis: { type: 'value', name: '增长率%', axisLabel: { formatter: '{value}%' } },
+            series: [{
+                type: 'bar', data: list.map(m => m.growthRate), barWidth: 30,
+                label: { show: true, position: 'top', formatter: p => (p.value === null ? '-' : p.value + '%'), fontSize: 10.5 },
+                itemStyle: {
+                    borderRadius: [6, 6, 0, 0],
+                    color: p => p.value >= 0 ? '#2fbf8f' : '#ef5b6b'
+                }
+            }]
+        });
+    }
+
+    function renderTable(list) {
+        document.getElementById('tableBody').innerHTML = list.map(m => `
+            <tr>
+                <td><b>${monthLabel(m.month)}</b></td>
+                <td class="num"><b>${fmtMoney(m.sales)}</b></td>
+                <td class="num">${fmtInt(m.orders)}</td>
+                <td class="num">${fmtInt(m.quantity)}</td>
+                <td class="num">${fmtMoney(m.avgOrderAmount)}</td>
+                <td class="num">${m.growthRate === null
+                    ? '<span style="color:#7a8699;">—</span>'
+                    : (m.growthRate >= 0
+                        ? '<span style="color:#1f9d72;">▲ ' + m.growthRate + '%</span>'
+                        : '<span style="color:#b33a4a;">▼ ' + m.growthRate + '%</span>')}</td>
+            </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8699;">暂无数据</td></tr>';
+    }
+
+    function renderMonthSelect(list) {
+        const sel = document.getElementById('monthSelect');
+        sel.innerHTML = list.map(m => `<option value="${m.month}">${monthLabel(m.month)}</option>`).join('');
+    }
+
+    async function loadDaily() {
+        const month = document.getElementById('monthSelect').value;
+        if (!month) return;
+        const el = document.getElementById('chartDaily');
+        try {
+            const list = await api('/api/monthly/daily?month=' + month);
+            if (isEmpty(list)) { showEmptyChart(el, '该月暂无数据'); return; }
+            hideEmptyChart(el);
+            const avg = list.reduce((s, d) => s + Number(d.sales), 0) / list.length;
+            initChart(el, {
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['当日销售额', '日均线'], top: 0 },
+                grid: { left: 10, right: 10, top: 36, bottom: 0, containLabel: true },
+                xAxis: { type: 'category', data: list.map(d => String(d.day).slice(5)), boundaryGap: false },
+                yAxis: { type: 'value', axisLabel: { formatter: v => (v / 1e4) + '万' } },
+                series: [
+                    {
+                        name: '当日销售额', type: 'line', smooth: true, symbolSize: 5,
+                        data: list.map(d => d.sales),
+                        areaStyle: { opacity: 0.12 }, lineStyle: { width: 2.5 },
+                        itemStyle: { color: '#4f7cff' }
+                    },
+                    {
+                        name: '日均线', type: 'line', symbol: 'none',
+                        data: list.map(() => avg.toFixed(2)),
+                        lineStyle: { type: 'dashed', width: 1.5 }, itemStyle: { color: '#ff9f43' }
+                    }
+                ]
+            });
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+    }
+
+    loadAll();
+</script>
+</body>
+</html>

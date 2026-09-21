@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - 超市销售分析平台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="auth-body">
+
+<div class="auth-card">
+    <div class="auth-logo">🛒</div>
+    <h1>注册新账号</h1>
+    <div class="sub">注册成功后自动登录</div>
+
+    <div class="auth-field">
+        <label>用户名（3~20 位字母、数字或下划线）</label>
+        <input type="text" id="username" placeholder="请输入用户名" autocomplete="username">
+    </div>
+    <div class="auth-field">
+        <label>昵称（选填）</label>
+        <input type="text" id="nickname" placeholder="展示名称，默认同用户名">
+    </div>
+    <div class="auth-field">
+        <label>密码（至少 6 位）</label>
+        <input type="password" id="password" placeholder="请输入密码" autocomplete="new-password">
+    </div>
+    <div class="auth-field">
+        <label>确认密码</label>
+        <input type="password" id="confirm" placeholder="请再次输入密码" autocomplete="new-password">
+    </div>
+
+    <div class="auth-msg" id="msg"></div>
+
+    <button class="btn" id="btnReg" onclick="doRegister()">注 册</button>
+
+    <div class="auth-foot">已有账号？<a href="login.html">返回登录</a></div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+    async function doRegister() {
+        const msg = document.getElementById('msg');
+        const btn = document.getElementById('btnReg');
+        const username = document.getElementById('username').value.trim();
+        const nickname = document.getElementById('nickname').value.trim();
+        const password = document.getElementById('password').value;
+        const confirm = document.getElementById('confirm').value;
+
+        if (!username || !password) {
+            msg.className = 'auth-msg show';
+            msg.textContent = '请输入用户名和密码';
+            return;
+        }
+        if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+            msg.className = 'auth-msg show';
+            msg.textContent = '用户名需为 3~20 位字母、数字或下划线';
+            return;
+        }
+        if (password.length < 6) {
+            msg.className = 'auth-msg show';
+            msg.textContent = '密码长度至少 6 位';
+            return;
+        }
+        if (password !== confirm) {
+            msg.className = 'auth-msg show';
+            msg.textContent = '两次输入的密码不一致';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '注册中…';
+        try {
+            const data = await postApi('/api/auth/register', {
+                username: username, password: password, nickname: nickname
+            });
+            if (data.success) {
+                toast('注册成功，欢迎！', 'success');
+                setTimeout(() => location.href = '/index.html', 300);
+            } else {
+                msg.className = 'auth-msg show';
+                msg.textContent = data.message || '注册失败';
+            }
+        } catch (e) {
+            msg.className = 'auth-msg show';
+            msg.textContent = e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '注 册';
+        }
+    }
+</script>
+</body>
+</html>
